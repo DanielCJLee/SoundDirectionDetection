@@ -1,2 +1,2 @@
-# SoundDirectionDetection
-Detection of sound using Smartphone
+# DualRecordingRemote
+Remote Repository for Dual Recording Project
