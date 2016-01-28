@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Calendar;
 
 import android.view.KeyEvent;
 
@@ -35,14 +36,16 @@ public class MainActivity extends AppCompatActivity {
     private boolean isRecording = false;
     String filePath1, filePath2;
     int min_buffer_length,
-            BufferElements2Rec = 4096*2, // number of shorts not bytes
+            BufferElements2Rec = 4096, // number of shorts not bytes
             BytesPerElement = 2,
             maxLag = 25,  //max possible lag between two samples in terms of number of frames (e.g. 17 samples of lag for phone length 0.13m and sampling rate 44.1khz)
-            threadSleepTime = 200; //time in ms
+            threadSleepTime = 300; //time in ms
     double phoneLength = 0.134, //separation between two microphones in meters
             angle = 0,
             soundVelocity = 343; //velocity of sound in air in m/s
-    TextView txtViewAngle;
+
+    //Calender instance to get current time
+    Calendar cal;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,15 +64,16 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void startRecording(View view) {
+        cal = Calendar.getInstance();
         enableButtons(true);
         min_buffer_length = AudioRecord.getMinBufferSize(RECORDER_SAMPLERATE, RECORDER_CHANNELS, RECORDER_AUDIO_ENCODING);
         recorder = new AudioRecord(MediaRecorder.AudioSource.CAMCORDER,
                 RECORDER_SAMPLERATE, RECORDER_CHANNELS,
-                RECORDER_AUDIO_ENCODING, min_buffer_length * 40);
+                RECORDER_AUDIO_ENCODING, min_buffer_length * 10);
 
         recorder.startRecording();
-        if (NoiseSuppressor.isAvailable()){
-            NoiseSuppressor ns=NoiseSuppressor.create(recorder.getAudioSessionId());
+        if (NoiseSuppressor.isAvailable()) {
+            NoiseSuppressor ns = NoiseSuppressor.create(recorder.getAudioSessionId());
             ns.setEnabled(true);
         }
 
@@ -94,56 +98,37 @@ public class MainActivity extends AppCompatActivity {
         return bytes;
     }
 
-    //write the recorded data to files
-//    void writeDataToFiles() {
-//        // Write the output audio in byte
-//        filePath1 = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/mic" + counter1 + "." + counter2 + ".pcm";
-//        filePath2 = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/camcorder" + counter1 + "." + counter2 + ".pcm";
-//        short sData[] = new short[BufferElements2Rec];
-//        short sData1[] = new short[BufferElements2Rec / 2];
-//        short sData2[] = new short[BufferElements2Rec - BufferElements2Rec / 2];
-//        FileOutputStream os1 = null;
-//        try {
-//            os1 = new FileOutputStream(filePath1);
-//        } catch (FileNotFoundException e) {
-//            e.printStackTrace();
-//        }
-//        FileOutputStream os2 = null;
-//        try {
-//            os2 = new FileOutputStream(filePath2);
-//        } catch (FileNotFoundException e) {
-//            e.printStackTrace();
-//        }
-//        while (isRecording) {
-//            // gets the voice output from microphone to byte format
-//            recorder.read(sData, 0, BufferElements2Rec);
-//            for (int i = 0; i < BufferElements2Rec; i++) {
-//                if (i % 2 == 0)
-//                    sData1[i / 2] = sData[i];
-//                else
-//                    sData2[(i - 1) / 2] = sData[i];
-//            }
-//            try {
-//                byte bData1[] = short2byte(sData1);
-//                byte bData2[] = short2byte(sData2);
-//                os1.write(bData1, 0, BufferElements2Rec / 2 * BytesPerElement);
-//                os2.write(bData2, 0, BufferElements2Rec / 2 * BytesPerElement);
-//            } catch (IOException e) {
-//                e.printStackTrace();
-//            }
-//        }
-//        try {
-//            os1.close();
-//            os2.close();
-//            counter2 += 1;
-//            if (counter2 > number_of_samples) {
-//                counter2 = 0;
-//                counter1 += 1;
-//            }
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-//    }
+    // write the recorded data to files
+    void writeDataToFiles(short sData1[], short sData2[]) {
+        // Write the output audio in byte
+        filePath1 = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/mic" + cal.getTime() + ".pcm";
+        filePath2 = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/camcorder" + cal.getTime() + ".pcm";
+
+        FileOutputStream os1 = null;
+        try {
+            os1 = new FileOutputStream(filePath1);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
+        FileOutputStream os2 = null;
+        try {
+            os2 = new FileOutputStream(filePath2);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
+        try {
+            byte bData1[] = short2byte(sData1);
+            byte bData2[] = short2byte(sData2);
+            os1.write(bData1, 0, BufferElements2Rec / 2 * BytesPerElement);
+            os2.write(bData2, 0, BufferElements2Rec / 2 * BytesPerElement);
+            os1.close();
+            os2.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
+    }
 
     public static boolean isAudible(short[] data) {
         double rms = getRootMeanSquared(data);
@@ -163,8 +148,8 @@ public class MainActivity extends AppCompatActivity {
     double findAngle() {
         String outputLogFilePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/Log_Output.csv";
         short sData[] = new short[BufferElements2Rec];
-        float sData1[] = new float[BufferElements2Rec / 2],
-                sData2[] = new float[BufferElements2Rec / 2];
+        short sData1[] = new short[BufferElements2Rec / 2],
+                sData2[] = new short[BufferElements2Rec / 2];
         PrintWriter writer = null;
         try {
             writer = new PrintWriter(new FileOutputStream(outputLogFilePath, true));
@@ -172,15 +157,17 @@ public class MainActivity extends AppCompatActivity {
             Log.e("Error", e.getMessage());
         }
         if (isRecording) {
-            // gets the voice output from microphone to byte format
+
             System.out.println("\nnumber of shorts read: " + recorder.read(sData, 0, BufferElements2Rec));
             if (isAudible(sData)) {
                 for (int i = 0; i < BufferElements2Rec; i++) {
                     if (i % 2 == 0)
-                        sData1[i / 2] = (float) sData[i];
+                        sData1[i / 2] =  sData[i];
                     else
-                        sData2[(i - 1) / 2] = (float) sData[i];
+                        sData2[(i - 1) / 2] = sData[i];
                 }
+                //write data to files (for debugging purpose)
+                writeDataToFiles(sData1, sData2);
                 float[] corrArray = findCorrelation(sData2, sData1, maxLag);//correlation wrt to camcorder i.e. keep sData2 (data corresponding to camcorder) fixed and shift the other one to find lag.
                 float max = corrArray[0]; //maximum correlation value
                 int maxIndex = 0;  //index of maximum correlation value
@@ -232,6 +219,7 @@ public class MainActivity extends AppCompatActivity {
                 Log.e("Thread Error", e.getMessage().toString());
             }
             angle = findAngle();
+            //update angle value on textview on UI
             if ((int) angle >= 0) {
                 runOnUiThread(new Runnable() {
                     @Override
@@ -262,7 +250,7 @@ public class MainActivity extends AppCompatActivity {
 
     //returns correlation array
     //correlation is computed by fixing the first array and shifting elements (not actually shifting) of second array bounded by maxLag.
-    public float[] findCorrelation(float[] input1, float[] input2, int maxLag) {
+    public float[] findCorrelation(short[] input1, short[] input2, int maxLag) {
         //this array contains the final correlation values for all lags. First maxLag number of elements are for negative lag followed by 0 lag and then positive lag.
         float[] correlationArray = new float[2 * maxLag + 1];
         int outputArrayIndex = 0;
