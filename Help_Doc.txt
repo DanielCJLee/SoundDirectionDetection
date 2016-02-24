@@ -1,0 +1,10 @@
+//This document is maintained for recording internal details of the project
+------------------------------
+Correlation 
+	Computed w.r.t to camcorder micrphone i.e we keep the camcorder data (in sdata2 variable) fixed and move the other micrphone data to find lag
+Lag: For maximum Correlation value 
+	Positive lag == the sound source lies more close to mic and 
+	Negative lag == the sound source is closer to camcorder
+Angle 
+	Computed wrt to camcorder
+	

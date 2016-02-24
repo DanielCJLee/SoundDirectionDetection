@@ -99,40 +99,31 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // write the recorded data to files
-    void writeDataToFiles(short sData1[], short sData2[]) {
+    void writeDataToFiles(short micData[], short camcorderData[]) {
         // Write the output audio in byte
         filePath1 = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/mic" + cal.getTime() + ".pcm";
         filePath2 = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/camcorder" + cal.getTime() + ".pcm";
+        FileOutputStream outputStream1 = null,
+                outputStream2 = null;
+        try {
+            outputStream1 = new FileOutputStream(filePath1, true);
+            outputStream2 = new FileOutputStream(filePath2, true);
 
-        FileOutputStream os1 = null;
-        try {
-            os1 = new FileOutputStream(filePath1);
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        }
-        FileOutputStream os2 = null;
-        try {
-            os2 = new FileOutputStream(filePath2);
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
+        } catch (Exception e) {
+            Log.e("File Not Found", e.getMessage());
         }
         try {
-            byte bData1[] = short2byte(sData1);
-            byte bData2[] = short2byte(sData2);
-            os1.write(bData1, 0, BufferElements2Rec / 2 * BytesPerElement);
-            os2.write(bData2, 0, BufferElements2Rec / 2 * BytesPerElement);
-            os1.close();
-            os2.close();
-        } catch (IOException e) {
-            e.printStackTrace();
+            outputStream1.write(short2byte(micData));
+            outputStream2.write(short2byte(camcorderData));
+        } catch (Exception e) {
+            Log.e("OutPutStream Error", e.getMessage());
         }
-
 
     }
 
     public static boolean isAudible(short[] data) {
         double rms = getRootMeanSquared(data);
-        return (rms > 680 && 15500 > rms);
+        return (rms > 280 && 15500 > rms);
     }
 
     public static double getRootMeanSquared(short[] data) {
@@ -148,8 +139,8 @@ public class MainActivity extends AppCompatActivity {
     double findAngle() {
         String outputLogFilePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/Log_Output.csv";
         short sData[] = new short[BufferElements2Rec];
-        short sData1[] = new short[BufferElements2Rec / 2],
-                sData2[] = new short[BufferElements2Rec / 2];
+        short micData[] = new short[BufferElements2Rec / 2],
+                camcorderData[] = new short[BufferElements2Rec / 2];
         PrintWriter writer = null;
         try {
             writer = new PrintWriter(new FileOutputStream(outputLogFilePath, true));
@@ -158,26 +149,52 @@ public class MainActivity extends AppCompatActivity {
         }
         if (isRecording) {
 
-            System.out.println("\nnumber of shorts read: " + recorder.read(sData, 0, BufferElements2Rec));
+            //System.out.println("\nnumber of shorts read: " + recorder.read(sData, 0,BufferElements2Rec));
+            //read data from the recorder
+            recorder.read(sData, 0, BufferElements2Rec);
             if (isAudible(sData)) {
                 for (int i = 0; i < BufferElements2Rec; i++) {
                     if (i % 2 == 0)
-                        sData1[i / 2] =  sData[i];
+                        micData[i / 2] = sData[i];
                     else
-                        sData2[(i - 1) / 2] = sData[i];
+                        camcorderData[(i - 1) / 2] = sData[i];
                 }
+                //variable to track whehter correlation algorithm should look for negative lag
+                // only or for positive lag only.
+                boolean searchForNegativeLag;
+                //compare magnitude to find out which microphone is closer to the audio source
+                searchForNegativeLag = compareMagnitude(micData, camcorderData) > 0 ? true : false;
+
+                //correlation wrt to camcorder i.e. keep camcorderData (data corresponding to camcorder) fixed and shift the other one to find lag.
+                float[] corrArray = findCorrelation(camcorderData, micData, maxLag);
                 //write data to files (for debugging purpose)
-                writeDataToFiles(sData1, sData2);
-                float[] corrArray = findCorrelation(sData2, sData1, maxLag);//correlation wrt to camcorder i.e. keep sData2 (data corresponding to camcorder) fixed and shift the other one to find lag.
-                float max = corrArray[0]; //maximum correlation value
-                int maxIndex = 0;  //index of maximum correlation value
-                for (int i = 1; i < corrArray.length; i++) {
+                writeDataToFiles(micData, camcorderData);
+                //find maximum value in correlation array taking into consideration whether only
+                // negative lag has to be considered or only positive lag has to be considered
+                // (input coming from magnitude comparison)
+                int arrayStartIndex,
+                        arrayStopIndex;
+                if (searchForNegativeLag){
+                    //find max correlation within negative and zero lag
+                    arrayStartIndex=0;
+                    arrayStopIndex=corrArray.length - maxLag;
+                }
+                else{
+                    //positive lag
+                    arrayStartIndex=maxLag+1;
+                    arrayStopIndex=corrArray.length;
+                }
+
+                float max = corrArray[arrayStartIndex]; //maximum correlation value
+                int maxIndex = arrayStartIndex;  //index of maximum correlation value
+                for (int i = arrayStartIndex+1; i < arrayStopIndex; i++) {
                     if (corrArray[i] > max) {
                         max = corrArray[i];
                         maxIndex = i;
                     }
                 }
                 int lag = mapIndexToLag(maxIndex);
+                //find angle wrt to camcorder
                 angle = findAngleFromLag(lag);
                 writer.println(new Date() + "," + lag + "," + angle);
                 System.out.println("Max lag : " + lag + "\t angle is :" + angle + "\n");
@@ -189,6 +206,25 @@ public class MainActivity extends AppCompatActivity {
         return angle;
     }
 
+    //method to compare magnitude received by MIC wrt to Camcorder
+    //return 1 if audio source is closer to Camcorder than MIC, otherwise -1
+    byte compareMagnitude(short[] MICData, short[] camcorderData) {
+        int arrayLen = MICData.length;
+        long MICDataSum = 0,
+                camcorderDataSum = 0;
+        for (int i = 0; i < arrayLen; i++) {
+            MICDataSum += MICData[i];
+            camcorderDataSum += camcorderData[i];
+        }
+        if (MICDataSum <= camcorderDataSum) {
+            return 1;
+        } else {
+            return -1;
+        }
+
+    }
+
+
     //find out lag from index of maximum correlation. The correlation array contains negative lag, zero lag and postiive lag in same order.
     private int mapIndexToLag(int maxIndex) {
         if (maxIndex == maxLag) {
@@ -199,7 +235,8 @@ public class MainActivity extends AppCompatActivity {
 
     //returns angle corresponding to the lag given. Angle is measure wrt to camcorder and is clockwise.
     double findAngleFromLag(int lag) {
-        //assumption is that correlation is measured wrt to camcorder signal i.e. camcorder signal is fixed and mic signal is delayed to check
+        //assumption is that correlation is measured wrt to camcorder signal i.e. camcorder
+        // signal is fixed and mic signal is delayed to check lag
         if (lag <= maxLag && lag >= -maxLag) { //lag can't be more (less) than 17 (-17) for a phone length of 0.134 and sampling rate of 44100 hz
             double timeDelay = (double) lag / RECORDER_SAMPLERATE;
             double angle = Math.toDegrees(Math.acos((timeDelay * soundVelocity) / phoneLength));
@@ -312,4 +349,5 @@ public class MainActivity extends AppCompatActivity {
 
         return super.onOptionsItemSelected(item);
     }
+
 }
