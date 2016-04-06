@@ -33,7 +33,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int RECORDER_SAMPLERATE = 44100,
             RECORDER_CHANNELS = AudioFormat.CHANNEL_IN_STEREO,
             RECORDER_AUDIO_ENCODING = AudioFormat.ENCODING_PCM_16BIT,
-            SMOOTHING_WINDOW = 10; //number of frames to consider for smoothening
+            SMOOTHING_WINDOW=10; //number of frames to consider for smoothening
     private AudioRecord recorder = null;
     private Thread recordingThread = null;
     private boolean isRecording = false;
@@ -41,13 +41,12 @@ public class MainActivity extends AppCompatActivity {
     int min_buffer_length,
             BufferElements2Rec = 4096, // number of shorts not bytes
             BytesPerElement = 2,
-            maxLag = 18,  //max possible lag between two samples in terms of number of frames (e.g
-            // . 17 samples of lag for phone length 0.13m and sampling rate 44.1khz)
+            maxLag = 25,  //max possible lag between two samples in terms of number of frames (e.g. 17 samples of lag for phone length 0.13m and sampling rate 44.1khz)
             threadSleepTime = 0; //time in ms
-    double phoneLength = 0.14, //separation between two microphones in meters
+    double phoneLength = 0.134, //separation between two microphones in meters
             angle = 0,
             soundVelocity = 343; //velocity of sound in air in m/s
-    double maxKey = 0.0;
+    double maxKey=0.0;
     //Calender instance to get current time
     Calendar cal;
 
@@ -127,7 +126,7 @@ public class MainActivity extends AppCompatActivity {
 
     public static boolean isAudible(short[] data) {
         double rms = getRootMeanSquared(data);
-        return (rms > 680 && 15500 > rms);
+        return (rms > 480 && 15500 > rms);
     }
 
     public static double getRootMeanSquared(short[] data) {
@@ -141,7 +140,7 @@ public class MainActivity extends AppCompatActivity {
 
     //separate stereo data for both microphones and process it further to find angle
     double findAngle() {
-//        Log.i("FindAngle called", "m");
+        Log.i("FindAngle called", "m");
         String outputLogFilePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/Log_Output.csv";
         short sData[] = new short[BufferElements2Rec];
         short micData[] = new short[BufferElements2Rec / 2],
@@ -153,6 +152,8 @@ public class MainActivity extends AppCompatActivity {
             Log.e("Error", e.getMessage());
         }
         if (isRecording) {
+
+            //System.out.println("\nnumber of shorts read: " + recorder.read(sData, 0,BufferElements2Rec));
             //read data from the recorder
             recorder.read(sData, 0, BufferElements2Rec);
             if (isAudible(sData)) {
@@ -164,33 +165,33 @@ public class MainActivity extends AppCompatActivity {
                 }
                 //variable to track whehter correlation algorithm should look for negative lag
                 // only or for positive lag only.
-                boolean micLouderThanCam=compareMagnitude(micData, camcorderData);
-//                //compare magnitude to find out which microphone is closer to the audio source
-//                searchForNegativeLag = compareMagnitude(micData, camcorderData) > 0 ? true : false;
+                boolean searchForNegativeLag;
+                //compare magnitude to find out which microphone is closer to the audio source
+                searchForNegativeLag = compareMagnitude(micData, camcorderData) > 0 ? true : false;
 
                 //correlation wrt to camcorder i.e. keep camcorderData (data corresponding to camcorder) fixed and shift the other one to find lag.
-                float[] corrArray = findCorrelation(camcorderData, micData, micLouderThanCam);
+                float[] corrArray = findCorrelation(camcorderData, micData, maxLag);
                 //write data to files (for debugging purpose)
                 writeDataToFiles(micData, camcorderData);
                 //find maximum value in correlation array taking into consideration whether only
                 // negative lag has to be considered or only positive lag has to be considered
                 // (input coming from magnitude comparison)
-
                 int arrayStartIndex,
                         arrayStopIndex;
-                if (!micLouderThanCam) {
+                if (searchForNegativeLag){
                     //find max correlation within negative and zero lag
-                    arrayStartIndex = 0;
-                    arrayStopIndex = corrArray.length - maxLag;
-                } else {
-                    //positive lag and zero lag
-                    arrayStartIndex = maxLag;
-                    arrayStopIndex = corrArray.length;
+                    arrayStartIndex=0;
+                    arrayStopIndex=corrArray.length - maxLag;
+                }
+                else{
+                    //positive lag
+                    arrayStartIndex=maxLag+1;
+                    arrayStopIndex=corrArray.length;
                 }
 
                 float max = corrArray[arrayStartIndex]; //maximum correlation value
                 int maxIndex = arrayStartIndex;  //index of maximum correlation value
-                for (int i = arrayStartIndex + 1; i < arrayStopIndex; i++) {
+                for (int i = arrayStartIndex+1; i < arrayStopIndex; i++) {
                     if (corrArray[i] > max) {
                         max = corrArray[i];
                         maxIndex = i;
@@ -210,16 +211,20 @@ public class MainActivity extends AppCompatActivity {
     }
 
     //method to compare magnitude received by MIC wrt to Camcorder
-    //return true when mic data magnitude is higher than camcorder
-    boolean compareMagnitude(short[] MICData, short[] camcorderData) {
+    //return 1 if audio source is closer to Camcorder than MIC, otherwise -1
+    byte compareMagnitude(short[] MICData, short[] camcorderData) {
         int arrayLen = MICData.length;
-        double MICDataSum = 0,
+        long MICDataSum = 0,
                 camcorderDataSum = 0;
         for (int i = 0; i < arrayLen; i++) {
-            MICDataSum += Math.abs(MICData[i]);
-            camcorderDataSum += Math.abs(camcorderData[i]);
+            MICDataSum += MICData[i];
+            camcorderDataSum += camcorderData[i];
         }
-        return MICDataSum > camcorderDataSum ? true : false;
+        if (MICDataSum <= camcorderDataSum) {
+            return 1;
+        } else {
+            return -1;
+        }
 
     }
 
@@ -235,9 +240,9 @@ public class MainActivity extends AppCompatActivity {
         // signal is fixed and mic signal is delayed to check lag
         if (lag <= maxLag && lag >= -maxLag) { //lag can't be more (less) than 17 (-17) for a phone length of 0.134 and sampling rate of 44100 hz
             double timeDelay = (double) lag / RECORDER_SAMPLERATE;
-            timeDelay = Math.abs(timeDelay);
+            timeDelay=Math.abs(timeDelay);
             double angle = Math.toDegrees(Math.acos((timeDelay * soundVelocity) / phoneLength));
-            angle = lag > 0 ? angle : 180 - angle;
+            angle = lag > 0  ? angle : 180 - angle;
             return Math.round(angle);
         } else {
             return -1;
@@ -246,30 +251,33 @@ public class MainActivity extends AppCompatActivity {
 
     private void processAudioData() {
         //writeDataToFiles();
-        HashMap<Double, Integer> angles = new HashMap(); //key value pair to store frequnecy of
-        // each angle. Used for smoothening
-        int smoothCount = 0,
-                maxValue = 0;
+        HashMap <Double, Integer> angles=new HashMap();
+        int smoothCount=0,
+            maxValue=0;
         while (isRecording) {
             angle = findAngle();
-//            try {
-////                Log.i("try called", "m");
-//                Thread.sleep(threadSleepTime);
-//            } catch (Exception e) {
-//                Log.e("Thread Error", e.getMessage().toString());
-//            }
-            if (smoothCount < SMOOTHING_WINDOW) {
-                if (angles.containsKey(angle)) {
+            try {
+                Log.i("try called", "m");
+                Thread.sleep(threadSleepTime);
+            } catch (Exception e) {
+                Log.e("Thread Error", e.getMessage().toString());
+            }
+            if (smoothCount < SMOOTHING_WINDOW){
+                if(angles.containsKey(angle)){
                     angles.put(angle, angles.get(angle) + 1);
-                } else {
+                }
+                else {
                     angles.put(angle, 1);
                 }
 
                 smoothCount++;
                 continue;
             }
-            for (Map.Entry<Double, Integer> entry : angles.entrySet()) {
-                if (entry.getValue() > maxValue) {
+
+
+
+            for(Map.Entry<Double, Integer> entry : angles.entrySet()) {
+                if(entry.getValue() > maxValue) {
                     maxValue = entry.getValue();
                     maxKey = entry.getKey();
                 }
@@ -284,11 +292,10 @@ public class MainActivity extends AppCompatActivity {
                     }
                 });
             }
-            //reset variables for next round of smoothening
-            smoothCount = 0;
-            angles = new HashMap();
-            maxValue = 0;
-            maxKey = 0.0;
+            smoothCount=0;
+            angles=new HashMap();
+            maxValue=0;
+            maxKey=0.0;
 
         }
 //        float[]input1=new float[]{1,2,3};
@@ -311,54 +318,34 @@ public class MainActivity extends AppCompatActivity {
 
     //returns correlation array
     //correlation is computed by fixing the first array and shifting elements (not actually shifting) of second array bounded by maxLag.
-    public float[] findCorrelation(short[] camData, short[] micData, boolean micLouderThanCam) {
+    public float[] findCorrelation(short[] input1, short[] input2, int maxLag) {
         //this array contains the final correlation values for all lags. First maxLag number of elements are for negative lag followed by 0 lag and then positive lag.
         float[] correlationArray = new float[2 * maxLag + 1];
         int outputArrayIndex = 0;
-
-        if (!micLouderThanCam) {
-            //calculate negative lag
-            for (int count = maxLag; count > 0; count--) {
-                int j = count;
-                for (int i = 0; i < camData.length - count; i++, j++) {
-                    correlationArray[outputArrayIndex] += camData[i] * micData[j];
-//                    j++;
-                }
-                outputArrayIndex++;
+        //negative lag
+        for (int count = maxLag; count > 0; count--) {
+            int j = count;
+            for (int i = 0; i < input1.length - count; i++) {
+                correlationArray[outputArrayIndex] += input1[i] * input2[j];
+                j++;
             }
-        } else {
-            //put dummy values in array for negative lag because source lies closer to mic and
-            // hence would have positive lag
-            for (int count = maxLag; count > 0; count--) {
-                correlationArray[outputArrayIndex] = -1;
-                outputArrayIndex++;
-            }
+            outputArrayIndex++;
         }
-
         //zero lag
-        for (int i = 0; i < camData.length; i++) {
-            correlationArray[outputArrayIndex] += camData[i] * micData[i];
+        for (int i = 0; i < input1.length; i++) {
+            correlationArray[outputArrayIndex] += input1[i] * input2[i];
         }
         outputArrayIndex++;
 
-        if (micLouderThanCam) {
-            //positive lag
-            for (int count = 1; count <= maxLag; count++) {
-                int j = 0;
-                for (int i = count; i < camData.length; i++) {
-                    correlationArray[outputArrayIndex] += camData[i] * micData[j];
-                    j++;
-                }
-                outputArrayIndex++;
+        //positive lag
+        for (int count = 1; count <= maxLag; count++) {
+            int j = 0;
+            for (int i = count; i < input1.length; i++) {
+                correlationArray[outputArrayIndex] += input1[i] * input2[j];
+                j++;
             }
-        } else {
-            //dummy lag
-            for (int count = 1; count <= maxLag; count++) {
-                correlationArray[outputArrayIndex] = -1;
-                outputArrayIndex++;
-            }
+            outputArrayIndex++;
         }
-
         return correlationArray;
     }
 
