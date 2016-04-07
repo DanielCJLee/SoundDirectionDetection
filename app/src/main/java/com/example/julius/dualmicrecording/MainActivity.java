@@ -165,12 +165,12 @@ public class MainActivity extends AppCompatActivity {
                 boolean micMagHigher;
                 //compare magnitude to find out which microphone is closer to the audio source
                 micMagHigher = compareMagnitude(micData, camcorderData);
-                System.out.println(micMagHigher);
+                System.out.println("MIC " +micMagHigher);
 
                 //correlation wrt to camcorder i.e. keep camcorderData (data corresponding to camcorder) fixed and shift the other one to find lag.
                 float[] corrArray = findCorrelation(camcorderData, micData);
                 //write data to files (for debugging purpose)
-//                writeDataToFiles(micData, camcorderData);
+                writeDataToFiles(micData, camcorderData);
                 //find maximum value in correlation array taking into consideration whether only
                 // negative lag has to be considered or only positive lag has to be considered
                 // (input coming from magnitude comparison)
@@ -185,7 +185,8 @@ public class MainActivity extends AppCompatActivity {
                     arrayStartIndex = maxLag + 1;
                     arrayStopIndex = corrArray.length;
                 }
-
+                arrayStartIndex=0;
+                arrayStopIndex=corrArray.length;
                 float max = corrArray[arrayStartIndex]; //maximum correlation value
                 int maxIndex = arrayStartIndex;  //index of maximum correlation value
                 for (int i = arrayStartIndex + 1; i < arrayStopIndex; i++) {
@@ -195,6 +196,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
                 int lag = mapIndexToLag(maxIndex);
+                System.out.println("Lag is "+lag);
                 //find angle wrt to camcorder
                 angle = findAngleFromLag(lag);
                 writer.println(new Date() + "," + lag + "," + angle);
