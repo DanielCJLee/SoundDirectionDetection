@@ -141,16 +141,11 @@ public class MainActivity extends AppCompatActivity {
 
     //separate stereo data for both microphones and process it further to find angle
     double findAngle() {
-        String outputLogFilePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/Log_Output.csv";
+
         short sData[] = new short[BufferElements2Rec];
         short micData[] = new short[BufferElements2Rec / 2],
                 camcorderData[] = new short[BufferElements2Rec / 2];
-        PrintWriter writer = null;
-        try {
-            writer = new PrintWriter(new FileOutputStream(outputLogFilePath, true));
-        } catch (Exception e) {
-            Log.e("Error", e.getMessage());
-        }
+
         if (isRecording) {
             //read data from the recorder
             recorder.read(sData, 0, BufferElements2Rec);
@@ -161,8 +156,6 @@ public class MainActivity extends AppCompatActivity {
                     else
                         micData[(i - 1) / 2] = sData[i];
                 }
-
-
                 //correlation wrt to camcorder i.e. keep camcorderData (data corresponding to camcorder) fixed and shift the other one to find lag.
                 float[] corrArray = findCorrelation(camcorderData, micData);
                 //write data to files (for debugging purpose)
@@ -172,7 +165,6 @@ public class MainActivity extends AppCompatActivity {
                 // (input coming from magnitude comparison)
                 int arrayStartIndex = 0,
                         arrayStopIndex = corrArray.length;
-
                 float max = corrArray[arrayStartIndex]; //maximum correlation value
                 int maxIndex = arrayStartIndex;  //index of maximum correlation value
                 for (int i = arrayStartIndex + 1; i < arrayStopIndex; i++) {
@@ -185,14 +177,27 @@ public class MainActivity extends AppCompatActivity {
 //                System.out.println("Lag is " + lag);
                 //find angle wrt to camcorder
                 angle = findAngleFromLag(lag);
-                writer.println(new Date() + "," + lag + "," + angle);
                 //System.out.println("Max lag : " + lag + "\t angle is :" + angle + "\n");
             } else {
                 System.out.println("data not audible");
             }
         }
-        writer.close();
+
         return angle;
+    }
+
+    private void writeAngleToFile(double angle){
+        String outputLogFilePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/Log_Output.csv";
+        PrintWriter writer = null;
+        try {
+            writer = new PrintWriter(new FileOutputStream(outputLogFilePath, true));
+            writer.println(new Date() +"," + angle);
+        } catch (Exception e) {
+            Log.e("Error", e.getMessage());
+        }
+
+        writer.close();
+
     }
 
     //find out lag from index of maximum correlation. The correlation array contains negative lag, zero lag and postiive lag in same order.
@@ -238,6 +243,7 @@ public class MainActivity extends AppCompatActivity {
                     maxKey = entry.getKey();
                 }
             }
+            writeAngleToFile(maxKey);
             //update angle value on textview on UI
             if (maxKey >= 0) {
                 final double maxKeyCopy = maxKey;
