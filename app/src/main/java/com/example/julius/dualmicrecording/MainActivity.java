@@ -125,12 +125,13 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    public static boolean isAudible(short[] data) {
+    private boolean isAudible(short[] data) {
         double rms = getRootMeanSquared(data);
-        return (rms > 680 && 15500 > rms);
+        Log.i("rms", Double.toString(rms));
+        return (rms >= 680);
     }
 
-    public static double getRootMeanSquared(short[] data) {
+    private double getRootMeanSquared(short[] data) {
         double ms = 0;
         for (int i = 0; i < data.length; i++) {
             ms += data[i] * data[i];
@@ -177,21 +178,23 @@ public class MainActivity extends AppCompatActivity {
 //                System.out.println("Lag is " + lag);
                 //find angle wrt to camcorder
                 angle = findAngleFromLag(lag);
+                Log.i("lag", Integer.toString(lag));
                 //System.out.println("Max lag : " + lag + "\t angle is :" + angle + "\n");
             } else {
-                System.out.println("data not audible");
+//                Log.i("Not audible","data not audible");
+                angle = -1;
             }
         }
 
         return angle;
     }
 
-    private void writeAngleToFile(double angle){
+    private void writeAngleToFile(double angle) {
         String outputLogFilePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/Log_Output.csv";
         PrintWriter writer = null;
         try {
             writer = new PrintWriter(new FileOutputStream(outputLogFilePath, true));
-            writer.println(new Date() +"," + angle);
+            writer.println(new Date() + "," + angle);
         } catch (Exception e) {
             Log.e("Error", e.getMessage());
         }
@@ -209,15 +212,14 @@ public class MainActivity extends AppCompatActivity {
     double findAngleFromLag(int lag) {
         //assumption is that correlation is measured wrt to camcorder signal i.e. camcorder
         // signal is fixed and mic signal is delayed to check lag
-        if (lag <= maxLag && lag >= -maxLag) { //lag can't be more (less) than 17 (-17) for a phone length of 0.134 and sampling rate of 44100 hz
-            double timeDelay = (double) lag / RECORDER_SAMPLERATE;
-            timeDelay = Math.abs(timeDelay);
-            double angle = Math.toDegrees(Math.acos((timeDelay * soundVelocity) / phoneLength));
-            angle = lag > 0 ? angle : 180 - angle;
-            return Math.round(angle);
-        } else {
-            return -1;
-        }
+        //lag can't be more (less) than 17 (-17) for a phone length of 0.134 and sampling rate of 44100 hz
+        double timeDelay = (double) lag / RECORDER_SAMPLERATE;
+        timeDelay = Math.abs(timeDelay);
+        double angle = Math.toDegrees(Math.acos((timeDelay * soundVelocity) / phoneLength));
+//        Log.i("angle", Double.toString(angle));
+        angle = lag > 0 ? angle : 180 - angle;
+        return Math.round(angle);
+
     }
 
     private void processAudioData() {
@@ -227,6 +229,9 @@ public class MainActivity extends AppCompatActivity {
                 maxValue = 0;
         while (isRecording) {
             angle = findAngle();
+            if (angle < 0) {
+                continue;
+            }
             if (smoothCount < SMOOTHING_WINDOW) {
                 if (angles.containsKey(angle)) {
                     angles.put(angle, angles.get(angle) + 1);
