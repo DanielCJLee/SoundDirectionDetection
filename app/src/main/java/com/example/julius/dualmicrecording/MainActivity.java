@@ -20,6 +20,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.Calendar;
@@ -146,46 +147,41 @@ public class MainActivity extends AppCompatActivity {
         short sData[] = new short[BufferElements2Rec];
         short micData[] = new short[BufferElements2Rec / 2],
                 camcorderData[] = new short[BufferElements2Rec / 2];
-
-        if (isRecording) {
-            //read data from the recorder
-            recorder.read(sData, 0, BufferElements2Rec);
-            if (isAudible(sData)) {
-                for (int i = 0; i < BufferElements2Rec; i++) {
-                    if (i % 2 == 0)
-                        camcorderData[i / 2] = sData[i];
-                    else
-                        micData[(i - 1) / 2] = sData[i];
-                }
-                //correlation wrt to camcorder i.e. keep camcorderData (data corresponding to camcorder) fixed and shift the other one to find lag.
-                float[] corrArray = findCorrelation(camcorderData, micData);
-                //write data to files (for debugging purpose)
-//                writeDataToFiles(micData, camcorderData);
-                //find maximum value in correlation array taking into consideration whether only
-                // negative lag has to be considered or only positive lag has to be considered
-                // (input coming from magnitude comparison)
-                int arrayStartIndex = 0,
-                        arrayStopIndex = corrArray.length;
-                float max = corrArray[arrayStartIndex]; //maximum correlation value
-                int maxIndex = arrayStartIndex;  //index of maximum correlation value
-                for (int i = arrayStartIndex + 1; i < arrayStopIndex; i++) {
-                    if (corrArray[i] > max) {
-                        max = corrArray[i];
-                        maxIndex = i;
-                    }
-                }
-                int lag = mapIndexToLag(maxIndex);
-//                System.out.println("Lag is " + lag);
-                //find angle wrt to camcorder
-                angle = findAngleFromLag(lag);
-                Log.i("lag", Integer.toString(lag));
-                //System.out.println("Max lag : " + lag + "\t angle is :" + angle + "\n");
-            } else {
-//                Log.i("Not audible","data not audible");
-                angle = -1;
+        //read data from the recorder
+        recorder.read(sData, 0, BufferElements2Rec);
+        if (isAudible(sData)) {
+            for (int i = 0; i < BufferElements2Rec; i++) {
+                if (i % 2 == 0)
+                    camcorderData[i / 2] = sData[i];
+                else
+                    micData[(i - 1) / 2] = sData[i];
             }
+            //correlation wrt to camcorder i.e. keep camcorderData (data corresponding to camcorder) fixed and shift the other one to find lag.
+            float[] corrArray = findCorrelation(camcorderData, micData);
+            //write data to files (for debugging purpose)
+//                writeDataToFiles(micData, camcorderData);
+            //find maximum value in correlation array taking into consideration whether only
+            // negative lag has to be considered or only positive lag has to be considered
+            // (input coming from magnitude comparison)
+            int arrayStartIndex = 0,
+                    arrayStopIndex = corrArray.length;
+            float max = corrArray[arrayStartIndex]; //maximum correlation value
+            int maxIndex = arrayStartIndex;  //index of maximum correlation value
+            for (int i = arrayStartIndex + 1; i < arrayStopIndex; i++) {
+                if (corrArray[i] > max) {
+                    max = corrArray[i];
+                    maxIndex = i;
+                }
+            }
+            int lag = mapIndexToLag(maxIndex);
+//                System.out.println("Lag is " + lag);
+            //find angle wrt to camcorder
+            angle = findAngleFromLag(lag);
+            Log.i("lag", Integer.toString(lag));
+        } else {
+//                Log.i("Not audible","data not audible");
+            angle = -1;
         }
-
         return angle;
     }
 
@@ -198,9 +194,7 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) {
             Log.e("Error", e.getMessage());
         }
-
         writer.close();
-
     }
 
     //find out lag from index of maximum correlation. The correlation array contains negative lag, zero lag and postiive lag in same order.
@@ -224,34 +218,30 @@ public class MainActivity extends AppCompatActivity {
 
     private void processAudioData() {
         //writeDataToFiles();
-        HashMap<Double, Integer> angles = new HashMap();
+        ArrayList<Double> angles = new ArrayList<Double>();
         int smoothCount = 0,
                 maxValue = 0;
+        double sum = 0,
+                avgAngle;
         while (isRecording) {
             angle = findAngle();
             if (angle < 0) {
                 continue;
             }
             if (smoothCount < SMOOTHING_WINDOW) {
-                if (angles.containsKey(angle)) {
-                    angles.put(angle, angles.get(angle) + 1);
-                } else {
-                    angles.put(angle, 1);
-                }
-
+                angles.add(angle);
                 smoothCount++;
                 continue;
             }
-            for (Map.Entry<Double, Integer> entry : angles.entrySet()) {
-                if (entry.getValue() > maxValue) {
-                    maxValue = entry.getValue();
-                    maxKey = entry.getKey();
-                }
+            for (double d : angles) {
+                sum = sum + d;
             }
-            writeAngleToFile(maxKey);
+            avgAngle = sum / angles.size();
+            logRawAngle(angles, (int) avgAngle);
+            writeAngleToFile(avgAngle);
             //update angle value on textview on UI
-            if (maxKey >= 0) {
-                final double maxKeyCopy = maxKey;
+            if (avgAngle >= 0) {
+                final int maxKeyCopy = (int)avgAngle;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
@@ -260,10 +250,8 @@ public class MainActivity extends AppCompatActivity {
                 });
             }
             smoothCount = 0;
-            angles = new HashMap();
-            maxValue = 0;
-            maxKey = 0;
-
+            angles.clear();
+            sum=0;
         }
     }
 
@@ -312,6 +300,20 @@ public class MainActivity extends AppCompatActivity {
         return correlationArray;
     }
 
+    private void logRawAngle(ArrayList<Double> ang, int estimatedAngle) {
+        String outputLogFilePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/Raw_Angle.csv";
+        PrintWriter writer = null;
+        try {
+            writer = new PrintWriter(new FileOutputStream(outputLogFilePath, true));
+            for (double i : ang) {
+                writer.println(i);
+            }
+            writer.println("," + estimatedAngle);
+        } catch (Exception e) {
+            Log.e("Error", e.getMessage());
+        }
+        writer.close();
+    }
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
