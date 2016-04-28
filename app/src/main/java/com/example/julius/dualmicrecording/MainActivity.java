@@ -34,7 +34,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int RECORDER_SAMPLERATE = 44100,
             RECORDER_CHANNELS = AudioFormat.CHANNEL_IN_STEREO,
             RECORDER_AUDIO_ENCODING = AudioFormat.ENCODING_PCM_16BIT,
-            SMOOTHING_WINDOW = 10; //number of frames to consider for smoothening
+            SMOOTHING_WINDOW = 15; //number of frames to consider for smoothening
     private AudioRecord recorder = null;
     private Thread recordingThread = null;
     private boolean isRecording = false;
@@ -129,7 +129,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean isAudible(short[] data) {
         double rms = getRootMeanSquared(data);
         Log.i("rms", Double.toString(rms));
-        return (rms >= 680);
+        return (rms >= 380);
     }
 
     private double getRootMeanSquared(short[] data) {
@@ -185,12 +185,12 @@ public class MainActivity extends AppCompatActivity {
         return angle;
     }
 
-    private void writeAngleToFile(double angle) {
+    private void writeAngleToFile(double angle, long execTime) {
         String outputLogFilePath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/Music/Log_Output.csv";
         PrintWriter writer = null;
         try {
             writer = new PrintWriter(new FileOutputStream(outputLogFilePath, true));
-            writer.println(new Date() + "," + angle);
+            writer.println(new Date() + "," + angle + "," + execTime);
         } catch (Exception e) {
             Log.e("Error", e.getMessage());
         }
@@ -223,7 +223,13 @@ public class MainActivity extends AppCompatActivity {
                 maxValue = 0;
         double sum = 0,
                 avgAngle;
+        boolean firstIteration = true;
+        long time1 = 0, time2;
         while (isRecording) {
+            if (firstIteration) {
+                time1 = System.currentTimeMillis();
+                firstIteration = false;
+            }
             angle = findAngle();
             if (angle < 0) {
                 continue;
@@ -236,12 +242,13 @@ public class MainActivity extends AppCompatActivity {
             for (double d : angles) {
                 sum = sum + d;
             }
-            avgAngle = sum / angles.size();
+            avgAngle = Math.round(sum / angles.size());
+            time2 = System.currentTimeMillis();
             logRawAngle(angles, (int) avgAngle);
-            writeAngleToFile(avgAngle);
+            writeAngleToFile(avgAngle, time2 - time1);
             //update angle value on textview on UI
             if (avgAngle >= 0) {
-                final int maxKeyCopy = (int)avgAngle;
+                final int maxKeyCopy = (int) avgAngle;
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
@@ -251,7 +258,8 @@ public class MainActivity extends AppCompatActivity {
             }
             smoothCount = 0;
             angles.clear();
-            sum=0;
+            sum = 0;
+            firstIteration = true;
         }
     }
 
