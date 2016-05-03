@@ -38,7 +38,7 @@ public class MainActivity extends AppCompatActivity {
     private AudioRecord recorder = null;
     private Thread recordingThread = null;
     private boolean isRecording = false;
-//    String filePath1, filePath2;
+    String filePath1, filePath2;
     int min_buffer_length,
             BufferElements2Rec = 4096, // number of shorts not bytes
             BytesPerElement = 2,
